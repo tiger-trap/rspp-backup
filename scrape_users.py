@@ -25,10 +25,7 @@ def get_token(env_vars):
 
     return headers
 
-if __name__ == "__main__":
-    env_vars = get_env_vars()
-    headers = get_token(env_vars)
-
+def get_commentators(headers):
     res = requests.get(f"{RSPP_ENDPOINT}/new", headers=headers)
 
     posts = res.json()['data']['children']
@@ -45,3 +42,9 @@ if __name__ == "__main__":
             print(f"Commentator: {c_author}")
 
         print("-----------------------------------------------------------------")
+
+
+if __name__ == "__main__":
+    env_vars = get_env_vars()
+    headers = get_token(env_vars)
+    get_commentators(headers)
