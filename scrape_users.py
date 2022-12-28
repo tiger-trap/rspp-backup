@@ -1,4 +1,4 @@
-import os, requests
+import os, requests, psycopg2
 
 RSPP_ENDPOINT = 'https://oauth.reddit.com/r/redscarepodprivate'
 
@@ -6,7 +6,11 @@ def get_env_vars():
     return {'client_id': os.environ['CLIENT_ID'],
             'secret_id': os.environ['SECRET_ID'],
             'reddit_user': os.environ['REDDIT_USERNAME'],
-            'reddit_pass': os.environ['REDDIT_PASSWORD']}
+            'reddit_pass': os.environ['REDDIT_PASSWORD'],
+            'db_name': os.environ['DB_NAME'],
+            'table_name': os.environ['TABLE_NAME'],
+            'db_user': os.environ['DB_USER'],
+            'db_password': os.environ['DB_PASSWORD']}
 
 def get_token(env_vars):
     auth = requests.auth.HTTPBasicAuth(env_vars['client_id'], env_vars['secret_id'])
@@ -25,26 +29,55 @@ def get_token(env_vars):
 
     return headers
 
-def get_commentators(headers):
+def connect_to_db(env_vars):
+    conn = psycopg2.connect(
+            host="localhost",
+            database=env_vars['db_name'],
+            user=env_vars['db_user'],
+            password=env_vars['db_password'])
+
+    return conn
+
+def disconnect_from_db(conn):
+    conn.close()
+
+def get_commentators(headers, env_vars, conn):
+    sql_statement = f"INSERT INTO {env_vars['table_name']} VALUES (%s, %s, %s) \
+                ON CONFLICT DO NOTHING"
+
     res = requests.get(f"{RSPP_ENDPOINT}/new", headers=headers)
 
     posts = res.json()['data']['children']
 
+    cursor = conn.cursor()
+
     for post in posts:
         post_id = post['data']['id']
         author = post['data']['author']
+        cursor.execute(sql_statement, (author, False, False))
+        conn.commit()
         print(f'Author: {author}')
+
         res = requests.get(f'{RSPP_ENDPOINT}/comments/{post_id}', headers=headers)
         comments = res.json()[1]['data']['children']
 
+        commentators = []
         for comment in comments:
             c_author = comment['data']['author']
-            print(f"Commentator: {c_author}")
+            print(f"Writing: {c_author}")
+            commentators.append((c_author,False,False,))
+
+        cursor.executemany(sql_statement, commentators)
+        conn.commit()
 
         print("-----------------------------------------------------------------")
+
+    cursor.close()
 
 
 if __name__ == "__main__":
     env_vars = get_env_vars()
     headers = get_token(env_vars)
-    get_commentators(headers)
+    conn = connect_to_db(env_vars)
+    get_commentators(headers, env_vars, conn)
+    disconnect_from_db(conn)
