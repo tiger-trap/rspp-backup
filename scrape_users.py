@@ -1,7 +1,7 @@
 import os, requests, psycopg2
 
 RSPP_ENDPOINT = 'https://oauth.reddit.com/r/redscarepodprivate'
-LIMIT = 100
+LIMIT = 25
 
 def get_env_vars():
     return {'client_id': os.environ['CLIENT_ID'],
@@ -42,12 +42,12 @@ def connect_to_db(env_vars):
 def disconnect_from_db(conn):
     conn.close()
 
-def get_commentators(headers, env_vars, conn, after):
+def get_commentators(headers, env_vars, conn, after, recurse):
     sql_statement = f"INSERT INTO {env_vars['table_name']} VALUES (%s, %s, %s) \
                 ON CONFLICT DO NOTHING"
 
     params = {'limit': LIMIT, 'after': after}
-    res = requests.get(f"{RSPP_ENDPOINT}/controversial", headers=headers, params=params)
+    res = requests.get(f"{RSPP_ENDPOINT}/new", headers=headers, params=params)
 
     posts = res.json()['data']['children']
 
@@ -80,7 +80,7 @@ def get_commentators(headers, env_vars, conn, after):
 
     cursor.close()
 
-    if len(posts) == LIMIT:
+    if len(posts) == LIMIT and recurse == True:
         print("\t\tRECURSIVE CALL")
         get_commentators(headers, env_vars, conn, after)
     else:
@@ -90,5 +90,5 @@ if __name__ == "__main__":
     env_vars = get_env_vars()
     headers = get_token(env_vars)
     conn = connect_to_db(env_vars)
-    get_commentators(headers, env_vars, conn, "")
+    get_commentators(headers, env_vars, conn, "", False)
     disconnect_from_db(conn)
