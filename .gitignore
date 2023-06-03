@@ -1,3 +1,4 @@
 *.swp
 run_scraper.sh
 venv/
+.vscode/
