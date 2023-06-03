@@ -22,7 +22,7 @@ def connect_to_db(env_vars):
     """ """
     conn = psycopg2.connect(
             host="localhost",
-            database="reddit",
+            database=os.environ['DB_NAME'],
             user=os.environ['DB_USER'],
             password=os.environ['DB_PASSWORD'])
 
