@@ -3,14 +3,21 @@ import logging
 import os
 import sys
 
+from pathlib import Path
 import requests
 import psycopg2
 import psycopg2.extras
 
+from modules.logging.logging import initialize_logging
+
 RSPP_ENDPOINT = 'https://oauth.reddit.com/r/redscarepodprivate'
 TOKEN_ENDPOINT = 'https://www.reddit.com/api/v1/access_token'
-LIMIT = 100
-RECURSE = True
+ENDPOINT_TYPE = "new"
+LIMIT = 1
+RECURSE = False
+DEBUG = False
+
+logger = logging.getLogger(__name__)
 
 def get_env_vars():
     """ """
@@ -49,7 +56,7 @@ def get_token(env_vars):
 
     res = requests.post(TOKEN_ENDPOINT, auth=auth, data=data, headers=headers, timeout=60)
     if res.status_code != 200:
-        logging.error("Error fetching token")
+        logger.error("Error fetching token")
         sys.exit(1)
 
     token = res.json()['access_token']
@@ -57,19 +64,27 @@ def get_token(env_vars):
 
     return headers
 
-def get_sql_statement(env_vars):
+def get_insert_sql_statement(env_vars):
     """ """
     sql_statement = f"INSERT INTO {env_vars['table_name']} (author, is_banned) \
             VALUES %s ON CONFLICT DO NOTHING"
 
     return sql_statement
 
+def get_count_users_sql_statement(env_vars):
+    """ """
+    sql_statement = f"SELECT COUNT(*) FROM {env_vars['table_name']}"
+
+    return sql_statement
+
 def get_posts(headers, posts, after):
     """ """
     params = {'limit': LIMIT, 'after': after}
-    res = requests.get(f"{RSPP_ENDPOINT}/top", headers=headers, params=params, timeout=60)
+    res = requests.get(f"{RSPP_ENDPOINT}/{ENDPOINT_TYPE}",
+            headers=headers, params=params, timeout=60)
+
     if res.status_code != 200:
-        logging.error("Error fetching posts from posts endpoint")
+        logger.error("Error fetching posts from posts endpoint")
         sys.exit(1)
 
     try:
@@ -77,24 +92,25 @@ def get_posts(headers, posts, after):
         for post in fetched_posts:
             posts.append(post)
     except IndexError:
-        logging.error("Error parsing response from posts endpoint")
+        logger.error("Error parsing response from posts endpoint")
         sys.exit(1)
 
-    logging.info("Fetched %s posts from the request", len(fetched_posts))
+    logger.info("Fetched %s posts from the request", len(fetched_posts))
 
     if len(fetched_posts) == LIMIT and RECURSE:
         try:
             last_post = fetched_posts[-1]['data']['name']
         except IndexError:
-            logging.error("Error fetching id from post")
+            logger.error("Error fetching id from post")
             sys.exit(1)
 
-        logging.info("Making recursive call")
+        logger.info("Making recursive call")
         get_posts(headers, posts, last_post)
     else:
-        logging.info("Fetched %s total posts", len(posts))
+        logger.info("Fetched %s total posts", len(posts))
 
 def insert_commentators(sql_statement, conn, posters):
+    """ """
     cursor = conn.cursor()
     psycopg2.extras.execute_values(cursor, sql_statement, posters)
     conn.commit()
@@ -105,57 +121,56 @@ def get_commentators(headers, posts, commentators):
     for post in posts:
         new_commentators = set()
         post_id = post['data']['id']
-        logging.info("Scraping post %s", post_id)
+        logger.info("Scraping post %s", post_id)
         post_author = post['data']['author']
 
         new_commentators.add((post_author,False))
-        logging.info("Found author %s", post_author)
+        logger.info("Found author %s", post_author)
         res = requests.get(f"{RSPP_ENDPOINT}/comments/{post_id}", headers=headers, timeout=60)
         if res.status_code != 200:
-            logging.error("Error fetching posts with id %s. Ignoring...", post_id)
+            logger.error("Error fetching posts with id %s. Ignoring...", post_id)
             continue
 
         try:
             comments = res.json()[1]['data']['children']
         except IndexError:
-            logging.error("Error parsing comments from response for %s", post_id)
+            logger.error("Error parsing comments from response for %s", post_id)
             continue
 
         for comment in comments:
             comment_author = comment['data']['author']
             new_commentators.add((comment_author,False))
-            logging.info("Found author %s", comment_author)
+            logger.info("Found author %s", comment_author)
 
         commentators.update(new_commentators)
 
 def main():
     """ """
-    logging.basicConfig(format='[%(asctime)s] %(levelname)s: %(message)s',
-            datefmt='%m/%d/%Y %I:%M:%S %p', level=logging.INFO)
+    initialize_logging(logger, DEBUG, Path(__file__).stem)
 
     env_vars = get_env_vars()
-    logging.info("Fetched env variables")
+    logger.info("Fetched env variables")
 
     conn = connect_to_db(env_vars)
-    logging.info("Connected to database")
+    logger.info("Connected to database")
 
-    sql_statement = get_sql_statement(env_vars)
+    sql_statement = get_insert_sql_statement(env_vars)
 
     token = get_token(env_vars)
-    logging.info("Fetched token")
+    logger.info("Fetched token")
 
     posts = []
     get_posts(token, posts, None)
 
     commentators = set()
     get_commentators(token, posts, commentators)
-    logging.info("Found %s unique posters", len(commentators))
+    logger.info("Found %s unique posters", len(commentators))
 
-    logging.info("Writing to database")
+    logger.info("Writing to database")
     success = insert_commentators(sql_statement, conn, commentators)
 
     disconnect_from_db(conn)
-    logging.info("Disconnected from database")
+    logger.info("Disconnected from database")
 
 if __name__ == "__main__":
     main()
