@@ -1,7 +1,8 @@
+""" """
 import logging
-import sys
 
 def initialize_logging(logger, debug, filename):
+    """ """
     log_name = f"./logs/{filename}.log"
 
     console = logging.StreamHandler()

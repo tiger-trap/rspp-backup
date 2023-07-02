@@ -3,3 +3,4 @@ run_scraper.sh
 venv/
 .vscode/
 logs/
+*.py[cod]

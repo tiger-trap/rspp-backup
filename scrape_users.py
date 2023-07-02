@@ -1,81 +1,22 @@
 """ """
 import logging
-import os
 import sys
 
 from pathlib import Path
 import requests
-import psycopg2
-import psycopg2.extras
 
-from modules.logging.logging import initialize_logging
+from modules.auth.auth import get_env_vars, get_token
+from modules.database.database import (connect_to_db, disconnect_from_db,
+        get_insert_sql_statement, get_count_users_sql_statement, insert_commentators, count_users)
+from modules.logging.logging_setup import initialize_logging
 
 RSPP_ENDPOINT = 'https://oauth.reddit.com/r/redscarepodprivate'
-TOKEN_ENDPOINT = 'https://www.reddit.com/api/v1/access_token'
 ENDPOINT_TYPE = "new"
-LIMIT = 1
-RECURSE = False
+LIMIT = 100
+RECURSE = True
 DEBUG = False
 
 logger = logging.getLogger(__name__)
-
-def get_env_vars():
-    """ """
-    return {'client_id': os.environ['CLIENT_ID'],
-            'secret_id': os.environ['SECRET_ID'],
-            'reddit_user': os.environ['REDDIT_USERNAME'],
-            'reddit_pass': os.environ['REDDIT_PASSWORD'],
-            'db_name': os.environ['DB_NAME'],
-            'table_name': os.environ['TABLE_NAME'],
-            'db_user': os.environ['DB_USER'],
-            'db_password': os.environ['DB_PASSWORD']}
-
-def connect_to_db(env_vars):
-    """ """
-    conn = psycopg2.connect(
-            host="localhost",
-            database=env_vars['db_name'],
-            user=env_vars['db_user'],
-            password=env_vars['db_password'])
-
-    return conn
-
-def disconnect_from_db(conn):
-    """ """
-    conn.close()
-
-def get_token(env_vars):
-    """ """
-    auth = requests.auth.HTTPBasicAuth(env_vars['client_id'], env_vars['secret_id'])
-
-    data = {'grant_type': 'password',
-            'username': env_vars['reddit_user'],
-            'password': env_vars['reddit_pass']}
-
-    headers = {'User-Agent': 'rspp/0.1.1'}
-
-    res = requests.post(TOKEN_ENDPOINT, auth=auth, data=data, headers=headers, timeout=60)
-    if res.status_code != 200:
-        logger.error("Error fetching token")
-        sys.exit(1)
-
-    token = res.json()['access_token']
-    headers = {**headers, **{'Authorization': f"bearer {token}"}}
-
-    return headers
-
-def get_insert_sql_statement(env_vars):
-    """ """
-    sql_statement = f"INSERT INTO {env_vars['table_name']} (author, is_banned) \
-            VALUES %s ON CONFLICT DO NOTHING"
-
-    return sql_statement
-
-def get_count_users_sql_statement(env_vars):
-    """ """
-    sql_statement = f"SELECT COUNT(*) FROM {env_vars['table_name']}"
-
-    return sql_statement
 
 def get_posts(headers, posts, after):
     """ """
@@ -109,12 +50,6 @@ def get_posts(headers, posts, after):
     else:
         logger.info("Fetched %s total posts", len(posts))
 
-def insert_commentators(sql_statement, conn, posters):
-    """ """
-    cursor = conn.cursor()
-    psycopg2.extras.execute_values(cursor, sql_statement, posters)
-    conn.commit()
-    return False
 
 def get_commentators(headers, posts, commentators):
     """ """
@@ -154,9 +89,15 @@ def main():
     conn = connect_to_db(env_vars)
     logger.info("Connected to database")
 
-    sql_statement = get_insert_sql_statement(env_vars)
+    insert_sql_statement = get_insert_sql_statement(env_vars)
+    count_sql_statement = get_count_users_sql_statement(env_vars)
+
+    num_users = count_users(count_sql_statement, conn)
+    logger.info("Current number of users in database: %s", num_users)
 
     token = get_token(env_vars)
+    if token is None:
+        sys.exit(1)
     logger.info("Fetched token")
 
     posts = []
@@ -167,7 +108,10 @@ def main():
     logger.info("Found %s unique posters", len(commentators))
 
     logger.info("Writing to database")
-    success = insert_commentators(sql_statement, conn, commentators)
+    insert_commentators(insert_sql_statement, conn, commentators)
+
+    num_users = count_users(count_sql_statement, conn)
+    logger.info("Current number of users in database: %s", num_users)
 
     disconnect_from_db(conn)
     logger.info("Disconnected from database")
