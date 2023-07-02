@@ -16,7 +16,8 @@ def get_env_vars():
             'db_name': os.environ['DB_NAME'],
             'table_name': os.environ['TABLE_NAME'],
             'db_user': os.environ['DB_USER'],
-            'db_password': os.environ['DB_PASSWORD']}
+            'db_password': os.environ['DB_PASSWORD'],
+            'reddit_user_agent': os.environ['REDDIT_USER_AGENT']}
 
 def get_token(env_vars):
     """ """
@@ -26,7 +27,7 @@ def get_token(env_vars):
             'username': env_vars['reddit_user'],
             'password': env_vars['reddit_pass']}
 
-    headers = {'User-Agent': 'rspp/0.1.1'}
+    headers = {'User-Agent': env_vars['reddit_user_agent']}
 
     res = requests.post(TOKEN_ENDPOINT, auth=auth, data=data, headers=headers, timeout=60)
     if res.status_code != 200:

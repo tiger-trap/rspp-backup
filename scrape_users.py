@@ -12,8 +12,8 @@ from modules.logging.logging_setup import initialize_logging
 
 RSPP_ENDPOINT = 'https://oauth.reddit.com/r/redscarepodprivate'
 ENDPOINT_TYPE = "new"
-LIMIT = 100
-RECURSE = True
+LIMIT = 10
+RECURSE = False
 DEBUG = False
 
 logger = logging.getLogger(__name__)
