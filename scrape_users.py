@@ -12,72 +12,46 @@ from modules.logging.logging_setup import initialize_logging
 
 RSPP_ENDPOINT = 'https://oauth.reddit.com/r/redscarepodprivate'
 ENDPOINT_TYPE = "new"
-LIMIT = 10
+LIMIT = 100
 RECURSE = False
 DEBUG = False
 
 logger = logging.getLogger(__name__)
 
-def get_posts(headers, posts, after):
-    """ """
-    params = {'limit': LIMIT, 'after': after}
-    res = requests.get(f"{RSPP_ENDPOINT}/{ENDPOINT_TYPE}",
-            headers=headers, params=params, timeout=60)
 
+def get_approved_submitters(headers, submitters, after):
+    params = {'limit': LIMIT, 'after': after}
+    res = requests.get(f"{RSPP_ENDPOINT}/about/contributors",
+            headers=headers, params=params, timeout=60)
     if res.status_code != 200:
-        logger.error("Error fetching posts from posts endpoint")
-        sys.exit(1)
+        logger.error(f"Error fetching contributors with status code: {res.status_code}")
+        logger.error(f"{res.json()}")
+        return
 
     try:
-        fetched_posts = res.json()['data']['children']
-        for post in fetched_posts:
-            posts.append(post)
+        contributors = res.json()['data']['children']
     except IndexError:
-        logger.error("Error parsing response from posts endpoint")
-        sys.exit(1)
+        logger.error("Error parsing contributors")
+        logger.error(f"{res.json()}")
+        return
 
-    logger.info("Fetched %s posts from the request", len(fetched_posts))
+    for contributor in contributors:
+        name = contributor['name']
+        user_id = contributor['id']
+        print(f"Fetching user: {name} ({user_id})")
+        submitters.add((name,user_id))
 
-    if len(fetched_posts) == LIMIT and RECURSE:
+    if len(contributors) == LIMIT and RECURSE:
         try:
-            last_post = fetched_posts[-1]['data']['name']
+            last_user = contributors[-1]['rel_id']
         except IndexError:
-            logger.error("Error fetching id from post")
-            sys.exit(1)
+            logger.error("Error fetching id from user data")
+            return
 
         logger.info("Making recursive call")
-        get_posts(headers, posts, last_post)
+        get_approved_submitters(headers, submitters, last_user)
     else:
-        logger.info("Fetched %s total posts", len(posts))
-
-
-def get_commentators(headers, posts, commentators):
-    """ """
-    for post in posts:
-        new_commentators = set()
-        post_id = post['data']['id']
-        logger.info("Scraping post %s", post_id)
-        post_author = post['data']['author']
-
-        new_commentators.add((post_author,False))
-        logger.info("Found author %s", post_author)
-        res = requests.get(f"{RSPP_ENDPOINT}/comments/{post_id}", headers=headers, timeout=60)
-        if res.status_code != 200:
-            logger.error("Error fetching posts with id %s. Ignoring...", post_id)
-            continue
-
-        try:
-            comments = res.json()[1]['data']['children']
-        except IndexError:
-            logger.error("Error parsing comments from response for %s", post_id)
-            continue
-
-        for comment in comments:
-            comment_author = comment['data']['author']
-            new_commentators.add((comment_author,False))
-            logger.info("Found author %s", comment_author)
-
-        commentators.update(new_commentators)
+        logger.info(f"Fetched {len(submitters)} total users")
 
 def main():
     """ """
@@ -100,15 +74,11 @@ def main():
         sys.exit(1)
     logger.info("Fetched token")
 
-    posts = []
-    get_posts(token, posts, None)
-
-    commentators = set()
-    get_commentators(token, posts, commentators)
-    logger.info("Found %s unique posters", len(commentators))
+    submitters = set()
+    get_approved_submitters(token, submitters, None)
 
     logger.info("Writing to database")
-    insert_commentators(insert_sql_statement, conn, commentators)
+    insert_commentators(insert_sql_statement, conn, submitters)
 
     num_users = count_users(count_sql_statement, conn)
     logger.info("Current number of users in database: %s", num_users)
