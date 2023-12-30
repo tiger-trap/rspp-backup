@@ -13,5 +13,7 @@ source venv/bin/activate
 
 pip install -r requirements.txt
 
-./scraper.sh
+./scraper.sh [-r] [-d]
+
+where -r fetches all users and -d logs debug statements
 ```

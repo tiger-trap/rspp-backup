@@ -1,4 +1,5 @@
 """ """
+import argparse
 import logging
 import sys
 
@@ -11,15 +12,12 @@ from modules.database.database import (connect_to_db, disconnect_from_db,
 from modules.logging.logging_setup import initialize_logging
 
 RSPP_ENDPOINT = 'https://oauth.reddit.com/r/redscarepodprivate'
-ENDPOINT_TYPE = "new"
 LIMIT = 100
-RECURSE = False
-DEBUG = False
 
 logger = logging.getLogger(__name__)
 
 
-def get_approved_submitters(headers, submitters, after):
+def get_approved_submitters(headers, submitters, after, recurse):
     params = {'limit': LIMIT, 'after': after}
     res = requests.get(f"{RSPP_ENDPOINT}/about/contributors",
             headers=headers, params=params, timeout=60)
@@ -41,7 +39,7 @@ def get_approved_submitters(headers, submitters, after):
         print(f"Fetching user: {name} ({user_id})")
         submitters.add((name,user_id))
 
-    if len(contributors) == LIMIT and RECURSE:
+    if len(contributors) == LIMIT and recurse:
         try:
             last_user = contributors[-1]['rel_id']
         except IndexError:
@@ -49,13 +47,14 @@ def get_approved_submitters(headers, submitters, after):
             return
 
         logger.info("Making recursive call")
-        get_approved_submitters(headers, submitters, last_user)
+        get_approved_submitters(headers, submitters, last_user, recurse)
     else:
         logger.info(f"Fetched {len(submitters)} total users")
 
-def main():
+def fetch_users_wrapper(recurse, debug_logs):
     """ """
-    initialize_logging(logger, DEBUG, Path(__file__).stem)
+
+    initialize_logging(logger, debug_logs, Path(__file__).stem)
 
     env_vars = get_env_vars()
     logger.info("Fetched env variables")
@@ -75,7 +74,7 @@ def main():
     logger.info("Fetched token")
 
     submitters = set()
-    get_approved_submitters(token, submitters, None)
+    get_approved_submitters(token, submitters, None, recurse)
 
     logger.info("Writing to database")
     insert_commentators(insert_sql_statement, conn, submitters)
@@ -87,4 +86,15 @@ def main():
     logger.info("Disconnected from database")
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(
+            prog="RSPP backup script",
+            description="Gets all approved submitters to rspp")
+
+    parser.add_argument("-r", "--recurse", action="store_true")
+    parser.add_argument("-d", "--debug", action="store_true")
+    args = parser.parse_args()
+    
+    recurse = args.recurse
+    debug_logs = args.debug
+
+    fetch_users_wrapper(recurse, debug_logs)

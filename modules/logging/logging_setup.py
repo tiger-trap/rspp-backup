@@ -1,9 +1,12 @@
 """ """
+import os
 import logging
 
 def initialize_logging(logger, debug, filename):
     """ """
     log_name = f"./logs/{filename}.log"
+
+    os.makedirs(os.path.dirname(log_name), exist_ok=True)
 
     console = logging.StreamHandler()
     file = logging.FileHandler(log_name)
