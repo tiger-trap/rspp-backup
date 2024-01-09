@@ -23,7 +23,7 @@ def disconnect_from_db(conn):
 def get_insert_sql_statement(env_vars):
     """ """
     sql_statement = f"INSERT INTO {env_vars['table_name']} (author, userid) \
-            VALUES %s ON CONFLICT DO NOTHING"
+            VALUES %s ON CONFLICT (userid) DO NOTHING"
 
     return sql_statement
 
