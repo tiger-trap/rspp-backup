@@ -3,6 +3,7 @@ import argparse
 import logging
 import sys
 
+from datetime import datetime
 from pathlib import Path
 import requests
 
@@ -36,8 +37,9 @@ def get_approved_submitters(headers, submitters, after, recurse):
     for contributor in contributors:
         name = contributor['name']
         user_id = contributor['id']
-        print(f"Fetching user: {name} ({user_id})")
-        submitters.add((name,user_id))
+        logger.debug(f"Fetching user: {name} ({user_id})")
+        dt = datetime.now()
+        submitters.add((name,user_id,dt,))
 
     if len(contributors) == LIMIT and recurse:
         try:
@@ -46,7 +48,7 @@ def get_approved_submitters(headers, submitters, after, recurse):
             logger.error("Error fetching id from user data")
             return
 
-        logger.info("Making recursive call")
+        logger.debug("Making recursive call")
         get_approved_submitters(headers, submitters, last_user, recurse)
     else:
         logger.info(f"Fetched {len(submitters)} total users")
@@ -57,10 +59,10 @@ def fetch_users_wrapper(recurse, debug_logs):
     initialize_logging(logger, debug_logs, Path(__file__).stem)
 
     env_vars = get_env_vars()
-    logger.info("Fetched env variables")
+    logger.debug("Fetched env variables")
 
     conn = connect_to_db(env_vars)
-    logger.info("Connected to database")
+    logger.debug("Connected to database")
 
     insert_sql_statement = get_insert_sql_statement(env_vars)
     count_sql_statement = get_count_users_sql_statement(env_vars)
@@ -71,19 +73,19 @@ def fetch_users_wrapper(recurse, debug_logs):
     token = get_token(env_vars)
     if token is None:
         sys.exit(1)
-    logger.info("Fetched token")
+    logger.debug("Fetched token")
 
     submitters = set()
     get_approved_submitters(token, submitters, None, recurse)
 
-    logger.info("Writing to database")
+    logger.debug("Writing to database")
     insert_commentators(insert_sql_statement, conn, submitters)
 
     num_users = count_users(count_sql_statement, conn)
     logger.info("Current number of users in database: %s", num_users)
 
     disconnect_from_db(conn)
-    logger.info("Disconnected from database")
+    logger.debug("Disconnected from database")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
