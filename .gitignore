@@ -4,3 +4,4 @@ venv/
 .vscode/
 logs/
 *.py[cod]
+add_users.sh
